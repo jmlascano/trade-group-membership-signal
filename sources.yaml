@@ -1,1 +1,15 @@
 # Config (defines each association's URL, pagination style, etc.)
+
+sources:
+  land-trust-alliance:
+    name: "Land Trust Alliance"
+    source_type: trade_group
+    base_url: "https://landtrustalliance.org/resources/connect/affiliates"
+    pagination_type: algolia_api
+    algolia_app_id: "9YSBZJ7RTK"
+    algolia_api_key: "ZDk2NjBhNjAxYjZiNTFmYmY2MjYyOTM3MjgyYTVlYjY0NGZjYzkxNjk1NjIwYWViODA4MWQ2NzU2OWJlNTA4OWZpbHRlcnM9YWNjZXNzJTNBcHVibGljJTIwT1IlMjBhY2Nlc3MlM0Fwcml2YXRl"
+    algolia_index: "affiliates_production"
+    algolia_page_size: 20   # hits per page; confirm from actual response
+    name_field: "name"      # JSON key in each hit containing the org name
+    role_field: "type"      # read role from hit instead of hardcoding
+    rate_limit_delay: 0.5   # seconds between page requests
