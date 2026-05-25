@@ -1,1 +1,74 @@
-# ProPublica verification logic
+import logging
+import time
+
+import requests
+from rapidfuzz import fuzz
+
+log = logging.getLogger(__name__)
+
+_SEARCH_URL = "https://projects.propublica.org/nonprofits/api/v2/search.json"
+_MIN_SCORE = 80
+_AMBIGUOUS_GAP = 5
+
+
+def verify_sample(records: list[dict]) -> None:
+    """Verify a list of record dicts in-place against ProPublica Nonprofit Explorer.
+
+    Populates verified_nonprofit, propublica_ein, and propublica_org_name for each record.
+    """
+    for record in records:
+        name = record.get("scraped_org_name", "")
+        try:
+            match = _lookup(name)
+        except Exception as exc:
+            log.warning("ProPublica lookup failed for %r: %s", name, exc)
+            record["verified_nonprofit"] = "false"
+            time.sleep(0.3)
+            continue
+
+        if match:
+            record["verified_nonprofit"] = "true"
+            record["propublica_ein"] = match["ein"]
+            record["propublica_org_name"] = match["name"]
+        else:
+            record["verified_nonprofit"] = "false"
+
+        time.sleep(0.3)
+
+
+def _lookup(name: str) -> dict | None:
+    """Query ProPublica and return the best-matching org, or None if no confident match."""
+    resp = requests.get(_SEARCH_URL, params={"q": name}, timeout=10)
+    if resp.status_code == 404:
+        log.debug("No ProPublica results for %r (404)", name)
+        return None
+    resp.raise_for_status()
+
+    orgs = resp.json().get("organizations", [])
+    if not orgs:
+        log.debug("No ProPublica results for %r", name)
+        return None
+
+    scored = sorted(
+        ((fuzz.token_sort_ratio(name, org.get("name", "")), org) for org in orgs),
+        reverse=True,
+        key=lambda x: x[0],
+    )
+
+    best_score, best_org = scored[0]
+
+    if best_score < _MIN_SCORE:
+        log.debug("No confident match for %r (best score: %d)", name, best_score)
+        return None
+
+    if len(scored) > 1 and (best_score - scored[1][0]) < _AMBIGUOUS_GAP:
+        log.info(
+            "Ambiguous match for %r — %r (score %d) vs %r (score %d); picking top",
+            name,
+            best_org.get("name"),
+            best_score,
+            scored[1][1].get("name"),
+            scored[1][0],
+        )
+
+    return {"ein": str(best_org.get("ein", "")), "name": best_org.get("name", "")}
