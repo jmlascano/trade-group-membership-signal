@@ -13,3 +13,14 @@ sources:
     name_field: "name"      # JSON key in each hit containing the org name
     role_field: "type"      # read role from hit instead of hardcoding
     rate_limit_delay: 0.5   # seconds between page requests
+
+  council-on-foundations:
+    name: "Council on Foundations"
+    source_type: trade_group
+    base_url: "https://cof.org/member-directory/non-members"
+    pagination_type: alphabetical
+    member_selector: ".views-field-nothing"
+    name_selector: "h2.member-item"
+    role: "member"
+    letter_param: "starts"
+    rate_limit_delay: 1.0
