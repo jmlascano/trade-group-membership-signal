@@ -18,9 +18,8 @@ sources:
     name: "Council on Foundations"
     source_type: trade_group
     base_url: "https://cof.org/member-directory/non-members"
-    pagination_type: alphabetical
+    pagination_type: single_page
     member_selector: ".views-field-nothing"
     name_selector: "h2.member-item"
     role: "member"
-    letter_param: "starts"
     rate_limit_delay: 1.0
