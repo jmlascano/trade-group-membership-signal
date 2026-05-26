@@ -7,6 +7,8 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
+# ── Config & public API ──────────────────────────────────────────────────────
+
 def load_config(source_key, path="sources.yaml"):
     with open(path) as f:
         data = yaml.safe_load(f)
@@ -27,11 +29,15 @@ def scrape(source_key, sources_path="sources.yaml"):
         yield from _scrape_paginated(config)
     elif pagination_type == "alphabetical":
         yield from _scrape_alphabetical(config)
+    elif pagination_type == "single_page":
+        yield from _scrape_single_page(config)
     elif pagination_type == "js_rendered":
         yield from _scrape_js(config)
     else:
         raise ValueError(f"Unknown pagination_type: '{pagination_type}'")
 
+
+# ── Schema ───────────────────────────────────────────────────────────────────
 
 def _make_record(config, name, role):
     return {
@@ -45,6 +51,8 @@ def _make_record(config, name, role):
         "propublica_org_name": "",
     }
 
+
+# ── HTTP helpers ─────────────────────────────────────────────────────────────
 
 def _post_with_retry(url, headers, json_body, max_retries=3):
     delay = 1.0
@@ -60,10 +68,10 @@ def _post_with_retry(url, headers, json_body, max_retries=3):
     resp.raise_for_status()
 
 
-def _get_with_retry(url, params=None, max_retries=3):
+def _get_with_retry(url, params=None, headers=None, max_retries=3):
     delay = 1.0
     for attempt in range(max_retries):
-        resp = requests.get(url, params=params)
+        resp = requests.get(url, params=params, headers=headers)
         if resp.status_code in (429, 503):
             logger.warning("Rate limited (attempt %d/%d), retrying in %.0fs", attempt + 1, max_retries, delay)
             time.sleep(delay)
@@ -73,6 +81,27 @@ def _get_with_retry(url, params=None, max_retries=3):
         return resp
     resp.raise_for_status()
 
+
+# ── HTML parsing ─────────────────────────────────────────────────────────────
+
+def _parse_members(soup, config, role, context=""):
+    member_selector = config["member_selector"]
+    name_selector   = config["name_selector"]
+    for member in soup.select(member_selector):
+        name_el = member.select_one(name_selector)
+        if not name_el:
+            logger.warning("Name element '%s' not found%s, skipping",
+                           name_selector, f" ({context})" if context else "")
+            continue
+        name = name_el.get_text(strip=True)
+        if not name:
+            logger.warning("Empty name text%s, skipping",
+                           f" ({context})" if context else "")
+            continue
+        yield _make_record(config, name, role)
+
+
+# ── Scraper implementations ───────────────────────────────────────────────────
 
 def _scrape_algolia(config):
     app_id = config["algolia_app_id"]
@@ -122,58 +151,36 @@ def _scrape_algolia(config):
 
 def _scrape_paginated(config):
     base_url = config["base_url"]
-    member_selector = config["member_selector"]
-    name_selector = config["name_selector"]
-    role = config.get("role", "member")
-    delay = config.get("rate_limit_delay", 1.0)
+    role     = config.get("role", "member")
+    delay    = config.get("rate_limit_delay", 1.0)
 
     page = 1
     while True:
         resp = _get_with_retry(base_url, params={"page": page})
         soup = BeautifulSoup(resp.text, "lxml")
-        members = soup.select(member_selector)
-
-        if not members:
+        if not soup.select(config["member_selector"]):
             break
-
-        for member in members:
-            name_el = member.select_one(name_selector)
-            if not name_el:
-                logger.warning("Name element '%s' not found on page %d, skipping", name_selector, page)
-                continue
-            name = name_el.get_text(strip=True)
-            if not name:
-                logger.warning("Empty name text on page %d, skipping", page)
-                continue
-            yield _make_record(config, name, role)
-
+        yield from _parse_members(soup, config, role, context=f"page {page}")
         page += 1
         time.sleep(delay)
 
 
+def _scrape_single_page(config):
+    resp = _get_with_retry(config["base_url"])
+    soup = BeautifulSoup(resp.text, "lxml")
+    yield from _parse_members(soup, config, config.get("role", "member"))
+
+
 def _scrape_alphabetical(config):
-    base_url = config["base_url"]
-    member_selector = config["member_selector"]
-    name_selector = config["name_selector"]
-    role = config.get("role", "member")
+    base_url     = config["base_url"]
+    role         = config.get("role", "member")
+    delay        = config.get("rate_limit_delay", 1.0)
     letter_param = config.get("letter_param", "letter")
-    delay = config.get("rate_limit_delay", 1.0)
 
     for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
         resp = _get_with_retry(base_url, params={letter_param: letter})
         soup = BeautifulSoup(resp.text, "lxml")
-
-        for member in soup.select(member_selector):
-            name_el = member.select_one(name_selector)
-            if not name_el:
-                logger.warning("Name element '%s' not found for letter %s, skipping", name_selector, letter)
-                continue
-            name = name_el.get_text(strip=True)
-            if not name:
-                logger.warning("Empty name text for letter %s, skipping", letter)
-                continue
-            yield _make_record(config, name, role)
-
+        yield from _parse_members(soup, config, role, context=f"letter {letter}")
         time.sleep(delay)
 
 
@@ -181,26 +188,15 @@ def _scrape_js(config):
     from playwright.sync_api import sync_playwright
 
     base_url = config["base_url"]
-    member_selector = config["member_selector"]
-    name_selector = config["name_selector"]
-    role = config.get("role", "member")
+    role     = config.get("role", "member")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        page.goto(base_url)
-        page.wait_for_selector(member_selector)
+        page.goto(base_url, timeout=30000)
+        page.wait_for_selector(config["member_selector"])
         html = page.content()
         browser.close()
 
     soup = BeautifulSoup(html, "lxml")
-    for member in soup.select(member_selector):
-        name_el = member.select_one(name_selector)
-        if not name_el:
-            logger.warning("Name element '%s' not found in JS-rendered page, skipping", name_selector)
-            continue
-        name = name_el.get_text(strip=True)
-        if not name:
-            logger.warning("Empty name text in JS-rendered page, skipping")
-            continue
-        yield _make_record(config, name, role)
+    yield from _parse_members(soup, config, role, context="JS-rendered page")
