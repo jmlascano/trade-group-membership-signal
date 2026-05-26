@@ -1,6 +1,7 @@
-# Config (defines each association's URL, pagination style, etc.)
+# Sources (defines each association's URL, pagination style, etc.)
 
 sources:
+  # Hidden JSON API
   land-trust-alliance:
     name: "Land Trust Alliance"
     source_type: trade_group
@@ -9,11 +10,12 @@ sources:
     algolia_app_id: "9YSBZJ7RTK"
     algolia_api_key: "ZDk2NjBhNjAxYjZiNTFmYmY2MjYyOTM3MjgyYTVlYjY0NGZjYzkxNjk1NjIwYWViODA4MWQ2NzU2OWJlNTA4OWZpbHRlcnM9YWNjZXNzJTNBcHVibGljJTIwT1IlMjBhY2Nlc3MlM0Fwcml2YXRl"
     algolia_index: "affiliates_production"
-    algolia_page_size: 20   # hits per page; confirm from actual response
+    algolia_page_size: 20   # hits per page / confirm from actual response
     name_field: "name"      # JSON key in each hit containing the org name
     role_field: "type"      # read role from hit instead of hardcoding
-    rate_limit_delay: 0.5   # seconds between page requests
+    rate_limit_delay: 0.5   # seconds between page requests (less than Static HTML as Algolia API is a SAAS built to handle high request volumes)
 
+  # Static HTML (single page)
   council-on-foundations:
     name: "Council on Foundations"
     source_type: trade_group
