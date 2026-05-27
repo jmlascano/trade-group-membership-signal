@@ -17,6 +17,8 @@ def _get_with_retry(url, params=None, max_retries=3):
     last_resp = None
     for attempt in range(max_retries):
         resp = requests.get(url, params=params, timeout=10)
+        if resp.status_code == 404:
+            return resp
         if resp.status_code not in (429, 503):
             resp.raise_for_status()
             return resp
