@@ -141,7 +141,9 @@ def _scrape_algolia(config):
         }
 
         resp = _post_with_retry(url, headers=headers, json_body=body)
-        hits = resp.json()["results"][0].get("hits", [])
+        result = resp.json()["results"][0]
+        hits = result.get("hits", [])
+        nb_pages = result.get("nbPages", 1)
 
         for hit in hits:
             name = hit.get(name_field)
@@ -152,7 +154,7 @@ def _scrape_algolia(config):
             role = hit.get(role_field, "member") if role_field else "member"
             yield _make_record(config, name, role)
 
-        if len(hits) < page_size:
+        if page + 1 >= nb_pages:
             break
 
         page += 1
