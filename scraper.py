@@ -56,30 +56,40 @@ def _make_record(config, name, role):
 
 def _post_with_retry(url, headers, json_body, max_retries=3):
     delay = 1.0
+    last_resp = None
     for attempt in range(max_retries):
         resp = requests.post(url, headers=headers, json=json_body)
-        if resp.status_code in (429, 503):
+        if resp.status_code not in (429, 503):
+            resp.raise_for_status()
+            return resp # exit the function on success
+        last_resp = resp
+        if attempt < max_retries - 1:
             logger.warning("Rate limited (attempt %d/%d), retrying in %.0fs", attempt + 1, max_retries, delay)
             time.sleep(delay)
             delay *= 2
-            continue
-        resp.raise_for_status()
-        return resp
-    resp.raise_for_status()
+    logger.warning("Rate limited on final attempt (%d/%d), giving up", max_retries, max_retries)
+    if last_resp is not None:
+        last_resp.raise_for_status()
+    raise RuntimeError(f"_post_with_retry called with max_retries=0 for {url}")
 
 
 def _get_with_retry(url, params=None, headers=None, max_retries=3):
     delay = 1.0
+    last_resp = None
     for attempt in range(max_retries):
         resp = requests.get(url, params=params, headers=headers)
-        if resp.status_code in (429, 503):
+        if resp.status_code not in (429, 503):
+            resp.raise_for_status()
+            return resp
+        last_resp = resp
+        if attempt < max_retries - 1:
             logger.warning("Rate limited (attempt %d/%d), retrying in %.0fs", attempt + 1, max_retries, delay)
             time.sleep(delay)
             delay *= 2
-            continue
-        resp.raise_for_status()
-        return resp
-    resp.raise_for_status()
+    logger.warning("Rate limited on final attempt (%d/%d), giving up", max_retries, max_retries)
+    if last_resp is not None:
+        last_resp.raise_for_status()
+    raise RuntimeError(f"_get_with_retry called with max_retries=0 for {url}")
 
 
 # ── HTML parsing ─────────────────────────────────────────────────────────────
