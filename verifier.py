@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 
 import requests
@@ -36,6 +37,18 @@ def verify_sample(records: list[dict]) -> None:
         time.sleep(0.3)
 
 
+_STRIP_TOKENS = {
+    "incorporated", "inc", "llc", "corp", "corporation",
+    "assoc", "assn", "ltd",
+}
+
+
+def _normalize(name: str) -> str:
+    name = re.sub(r"[.,']", "", name.lower())
+    tokens = [t for t in name.split() if t not in _STRIP_TOKENS]
+    return " ".join(tokens)
+
+
 def _lookup(name: str) -> dict | None:
     """Query ProPublica and return the best-matching org, or None if no confident match."""
     resp = requests.get(_SEARCH_URL, params={"q": name}, timeout=10)
@@ -49,8 +62,9 @@ def _lookup(name: str) -> dict | None:
         log.debug("No ProPublica results for %r", name)
         return None
 
+    norm_name = _normalize(name)
     scored = sorted(
-        ((fuzz.token_sort_ratio(name, org.get("name", "")), org) for org in orgs),
+        ((fuzz.token_sort_ratio(norm_name, _normalize(org.get("name", ""))), org) for org in orgs),
         reverse=True,
         key=lambda x: x[0],
     )
