@@ -13,6 +13,7 @@ _AMBIGUOUS_GAP = 5
 
 
 def _get_with_retry(url, params=None, max_retries=3):
+    """Execute HTTP GET request with backoff retry for overloads & rate limits."""
     delay = 1.0
     last_resp = None
     for attempt in range(max_retries):
@@ -66,6 +67,7 @@ _STRIP_TOKENS = {
 }
 
 def _normalize(name: str) -> str:
+    """Standardize organization names by converting them to lowercase, stripping common punctation & removing common suffixes."""
     name = re.sub(r"[.,']", "", name.lower())
     tokens = [t for t in name.split() if t not in _STRIP_TOKENS]
     return " ".join(tokens)
@@ -73,17 +75,20 @@ def _normalize(name: str) -> str:
 
 def _lookup(name: str) -> dict | None:
     """Query ProPublica and return the best-matching org, or None if no confident match."""
+    # Submit a GET request to ProPublica API search endpoint
     resp = _get_with_retry(_SEARCH_URL, params={"q": name})
     if resp.status_code == 404:
         log.debug("No ProPublica results for %r (404)", name)
         return None
     resp.raise_for_status()
 
+    # Extracts the list array of organization records
     orgs = resp.json().get("organizations", [])
     if not orgs:
         log.debug("No ProPublica results for %r", name)
         return None
 
+    # Score and rank the every search result (normalized)
     norm_name = _normalize(name)
     scored = sorted(
         ((fuzz.token_sort_ratio(norm_name, _normalize(org.get("name", ""))), org) for org in orgs),

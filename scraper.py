@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 # ── Config & public API ──────────────────────────────────────────────────────
 
 def load_config(source_key, path="sources.yaml"):
+    """Read YAML config file."""
     with open(path) as f:
         data = yaml.safe_load(f)
     try:
@@ -20,6 +21,7 @@ def load_config(source_key, path="sources.yaml"):
 
 
 def scrape(source_key, sources_path="sources.yaml"):
+    """Centralized router for the scraping system."""
     config = load_config(source_key, sources_path)
     pagination_type = config["pagination_type"]
 
@@ -40,6 +42,7 @@ def scrape(source_key, sources_path="sources.yaml"):
 # ── Schema ───────────────────────────────────────────────────────────────────
 
 def _make_record(config, name, role):
+    """Constructs & returns standardized data record dict."""
     return {
         "scraped_org_name": name,
         "source_type": config["source_type"],
@@ -55,6 +58,7 @@ def _make_record(config, name, role):
 # ── HTTP helpers ─────────────────────────────────────────────────────────────
 
 def _post_with_retry(url, headers, json_body, max_retries=3):
+    """Execute HTTP POST request with backoff retry for overloads & rate limits."""
     delay = 1.0
     last_resp = None
     for attempt in range(max_retries):
@@ -74,6 +78,7 @@ def _post_with_retry(url, headers, json_body, max_retries=3):
 
 
 def _get_with_retry(url, params=None, headers=None, max_retries=3):
+    """Execute HTTP GET request with backoff retry for overloads & rate limits."""
     delay = 1.0
     last_resp = None
     for attempt in range(max_retries):
@@ -95,9 +100,10 @@ def _get_with_retry(url, params=None, headers=None, max_retries=3):
 # ── HTML parsing ─────────────────────────────────────────────────────────────
 
 def _parse_members(soup, config, role, context=""):
+    """Parses a BeautifulSoup HTML object to extract individual membrs."""
     member_selector = config["member_selector"]
     name_selector   = config["name_selector"]
-    for member in soup.select(member_selector):
+    for member in soup.select(member_selector): # execute a CSS selector query against the document
         name_el = member.select_one(name_selector)
         if not name_el:
             logger.warning("Name element '%s' not found%s, skipping",
@@ -114,6 +120,7 @@ def _parse_members(soup, config, role, context=""):
 # ── Scraper implementations ───────────────────────────────────────────────────
 
 def _scrape_algolia(config):
+    """Scrape member directories that use Algolia search API."""
     app_id = config["algolia_app_id"]
     api_key = config["algolia_api_key"]
     index = config["algolia_index"]
@@ -130,7 +137,7 @@ def _scrape_algolia(config):
     }
 
     page = 0
-    while True:
+    while True: # end when no pages remain
         body = {
             "requests": [{
                 "indexName": index,
@@ -162,6 +169,7 @@ def _scrape_algolia(config):
 
 
 def _scrape_paginated(config):
+    """Scrape sources that use standard numeric pagination."""
     base_url = config["base_url"]
     role     = config.get("role", "member")
     delay    = config.get("rate_limit_delay", 1.0)
@@ -178,12 +186,14 @@ def _scrape_paginated(config):
 
 
 def _scrape_single_page(config):
+    """Scrape sources that use a single page for their member directory."""
     resp = _get_with_retry(config["base_url"])
     soup = BeautifulSoup(resp.text, "lxml")
     yield from _parse_members(soup, config, config.get("role", "member"))
 
 
 def _scrape_alphabetical(config):
+    """Scrape sources that categorizes members alphabetically."""
     base_url     = config["base_url"]
     role         = config.get("role", "member")
     delay        = config.get("rate_limit_delay", 1.0)
@@ -197,7 +207,8 @@ def _scrape_alphabetical(config):
 
 
 def _scrape_js(config):
-    from playwright.sync_api import sync_playwright
+    """Scrape sources that rely on JS rendering (single page only)."""
+    from playwright.sync_api import sync_playwright # lazy import so the project does not crash if the user does not install Playwright
 
     base_url = config["base_url"]
     role     = config.get("role", "member")

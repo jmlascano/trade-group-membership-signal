@@ -12,13 +12,14 @@ import verifier
 
 
 def _parse_args():
+    """Set up and process CLI args."""
     parser = argparse.ArgumentParser(
         description="Scrape a trade group member directory and produce a structured CSV.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  python run.py --source land-trust-alliance --out output/lta.csv\n"
-            "  python run.py --source land-trust-alliance --out output/lta.csv --verify-sample 15"
+            "  python run.py --source land-trust-alliance --out members.csv\n"
+            "  python run.py --source land-trust-alliance --verify-sample 15"
         ),
     )
     parser.add_argument(
@@ -52,12 +53,14 @@ def main():
 
     args = _parse_args()
 
+    # Use user explicit destination or fallback to output/<source_name>.csv & create parent dir if needed
     out_path = Path(args.out) if args.out else Path("output") / f"{args.source}.csv"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     log.info("Source  : %s", args.source)
     log.info("Output  : %s", out_path)
 
+    # Collect & scrape data rows
     records: list[dict] = []
     try:
         for record in scraper.scrape(args.source):
@@ -70,6 +73,7 @@ def main():
 
     log.info("Scraped %d records", len(records))
 
+    # Verify if needed
     if args.verify_sample and records:
         n = min(args.verify_sample, len(records))
         sample = random.sample(records, n)
@@ -78,6 +82,7 @@ def main():
         verified_count = sum(1 for r in sample if r.get("verified_nonprofit") == "true")
         log.info("Verification done  (%d/%d matched)", verified_count, n)
 
+    # Convert records to a df & output CSV at defined path
     df = pd.DataFrame(records)
     df.to_csv(out_path, index=False)
     log.info("Wrote %d rows → %s", len(df), out_path)
