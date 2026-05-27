@@ -12,6 +12,27 @@ _MIN_SCORE = 80
 _AMBIGUOUS_GAP = 5
 
 
+def _get_with_retry(url, params=None, max_retries=3):
+    delay = 1.0
+    last_resp = None
+    for attempt in range(max_retries):
+        resp = requests.get(url, params=params, timeout=10)
+        if resp.status_code not in (429, 503):
+            resp.raise_for_status()
+            return resp
+        last_resp = resp
+        if attempt < max_retries - 1:
+            log.warning("ProPublica rate limited (attempt %d/%d), retrying in %.0fs",
+                        attempt + 1, max_retries, delay)
+            time.sleep(delay)
+            delay *= 2
+    log.warning("ProPublica rate limited on final attempt (%d/%d), giving up",
+                max_retries, max_retries)
+    if last_resp is not None:
+        last_resp.raise_for_status()
+    raise RuntimeError(f"_get_with_retry called with max_retries=0 for {url}")
+
+
 def verify_sample(records: list[dict]) -> None:
     """Verify a list of record dicts in-place against ProPublica Nonprofit Explorer.
 
@@ -42,7 +63,6 @@ _STRIP_TOKENS = {
     "assoc", "assn", "ltd",
 }
 
-
 def _normalize(name: str) -> str:
     name = re.sub(r"[.,']", "", name.lower())
     tokens = [t for t in name.split() if t not in _STRIP_TOKENS]
@@ -51,7 +71,7 @@ def _normalize(name: str) -> str:
 
 def _lookup(name: str) -> dict | None:
     """Query ProPublica and return the best-matching org, or None if no confident match."""
-    resp = requests.get(_SEARCH_URL, params={"q": name}, timeout=10)
+    resp = _get_with_retry(_SEARCH_URL, params={"q": name})
     if resp.status_code == 404:
         log.debug("No ProPublica results for %r (404)", name)
         return None
