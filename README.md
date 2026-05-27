@@ -84,6 +84,24 @@ Rate limiting is handled with exponential backoff (max 3 retries) on 429 and 503
 
 **AI tools.** Claude Code was used throughout the build. It was most useful for debugging — particularly fixing the retry logic, the `nbPages` pagination bug, and the verifier's normalization — followed by helping investigate and confirm the Algolia API structure on the LTA site, and generating the initial boilerplate for the three main modules.
 
+### Setup
+
+Requires Python 3.12+.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+playwright install chromium
+```
+
+Then run:
+
+```bash
+python run.py --source land-trust-alliance --verify-sample 15
+python run.py --source council-on-foundations --verify-sample 15
+```
+
 ## Cost, scale, feasibility
 
 **Current runtime.** Both sources scrape in under a minute on a standard machine. Static HTML (Council on Foundations) is faster — a single GET request followed by local parsing. The Algolia API (Land Trust Alliance) requires multiple paginated POST requests with delays between each, making it slower despite returning structured data.
